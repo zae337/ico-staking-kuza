@@ -17,6 +17,7 @@ contract TokenICO {
     address public tokenAddress;
     uint256 public tokenSalePrice;
     uint256 public soldTokens;
+    mapping(address => uint256) public icoPurchases;
     
     modifier onlyOwner() {
         require(msg.sender == owner, "Only contract owner can perform this action");
@@ -25,6 +26,14 @@ contract TokenICO {
     
     constructor() {
         owner = msg.sender;
+    }
+
+    function recordPurchase(address buyer, uint256 amount) external {
+        icoPurchases[buyer] += amount;
+    }
+
+    function getPurchaseAmount(address buyer) external view returns (uint256) {
+        return icoPurchases[buyer];
     }
     
     function updateToken(address _tokenAddress) public onlyOwner {
@@ -40,7 +49,7 @@ contract TokenICO {
     }
 
     function buyToken(uint256 _tokenAmount) public payable {
-        require(msg.value == multiply(_tokenAmount, tokenSalePrice), "Insufficient Ether provided for the token purchase");
+        require(msg.value == multiply(_tokenAmount, tokenSalePrice), "Insufficient balance provided for the token purchase");
         
         ERC20 token = ERC20(tokenAddress);
         require(_tokenAmount <= token.balanceOf(address(this)), "Not enough tokens left for sale");
