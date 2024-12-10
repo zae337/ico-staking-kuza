@@ -1086,6 +1086,11 @@ library SafeERC20 {
 
 pragma solidity ^0.8.0;
 
+interface ITokenICO {
+    function getPurchaseAmount(address buyer) external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address recipient, uint256 amount) external returns (bool);
+}
 
 contract StakingDapp is Ownable, ReentrancyGuard {
 
@@ -1119,6 +1124,62 @@ contract StakingDapp is Ownable, ReentrancyGuard {
     mapping (address => uint256) public depositedTokens;
     mapping (uint256 => mapping (address => UserInfo)) public userInfo;
     Notification[] public notifications;
+    mapping(address => address) public referrals;
+    mapping(address => uint256) public referralRewards;
+    mapping(address => address[]) public referralList;
+    ITokenICO public tokenICO;
+
+    function registerReferral(address referrer) public {
+        require(referrer != address(0), "Invalid referrer address");
+        require(referrals[msg.sender] == address(0), "Referral already set");
+
+        referrals[msg.sender] = referrer;
+    }
+
+    function setReferral(address referrer) public {
+        require(referrals[msg.sender] == address(0), "Referral already set");
+        require(referrer != msg.sender, "Cannot refer yourself");
+        referrals[msg.sender] = referrer;
+        referralList[referrer].push(msg.sender);
+    }
+
+    function calculateReferralReward(address referrer, uint256 stakingAmount, uint256 icoAmount) public view returns (uint256) {
+        uint256 totalReferrals = getTotalReferrals(referrer); // Ambil total referral
+        uint256 stakingReward = (totalReferrals * 5 * stakingAmount) / 100;
+        uint256 icoReward = (totalReferrals * 5 * icoAmount) / 100;
+        return stakingReward + icoReward;
+    }
+
+    function setTokenICO(address _tokenICO) external onlyOwner {
+        tokenICO = ITokenICO(_tokenICO);
+    }
+
+    function distributeReferralReward(address buyer, uint256 stakingAmount) private {
+        address referrer = referrals[buyer];
+        require(stakingAmount > 0, "Staking required to activate referral");
+        if (referrer != address(0)) {
+            uint256 icoAmount = tokenICO.getPurchaseAmount(buyer);
+            uint256 reward = calculateReferralReward(referrer, stakingAmount, icoAmount);
+            referralRewards[referrer] += reward;
+        }
+    }
+
+
+    function withdrawReferralRewards() public {
+        uint256 reward = referralRewards[msg.sender];
+        require(reward > 0, "No rewards available");
+        require(tokenICO.balanceOf(address(this)) >= reward, "Insufficient contract balance");
+        referralRewards[msg.sender] = 0;
+        tokenICO.transfer(msg.sender, reward);
+    }
+
+    function getReferralList(address user) public view returns (address[] memory) {
+        return referralList[user];
+    }
+
+    function getTotalReferrals(address user) public view returns (uint256) {
+         return referralList[user].length;
+    }
 
     function addPool(IERC20 _depositToken, IERC20 _rewardToken, uint256 _apy, uint _lockDays) public onlyOwner {
         poolInfo.push(PoolInfo({
@@ -1150,7 +1211,6 @@ contract StakingDapp is Ownable, ReentrancyGuard {
 
         user.amount += _amount;
         user.lastRewardAt = block.timestamp;
-        // user.lockUntil = block.timestamp + (pool.lockDays * 86400);
         user.lockUntil = block.timestamp + (pool.lockDays * 360);
         depositedTokens[address(pool.depositToken)] += _amount;
 
@@ -1185,12 +1245,11 @@ contract StakingDapp is Ownable, ReentrancyGuard {
 
     function _calcPendingReward(UserInfo storage user, uint _pid) internal view returns (uint) {
         PoolInfo storage pool = poolInfo[_pid];
-        // uint daysPassed = (block.timestamp - user.lastRewardAt) / 86400;
-        uint daysPassed = (block.timestamp - user.lastRewardAt) / 360;
-        if(daysPassed > pool.lockDays){
-            daysPassed = pool.lockDays;
+        uint daysPassed = (block.timestamp - user.lastRewardAt) / 86400;
+        if(daysPassed >= pool.lockDays){
+            return (pool.apy * user.amount) / 100;
         }
-        return user.amount * daysPassed / 365 / 100 * pool.apy;
+        return 0;
     }
 
     function pendingReward(uint _pid, address _user)public view returns (uint){
