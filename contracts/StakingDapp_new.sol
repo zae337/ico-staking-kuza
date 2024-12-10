@@ -1088,6 +1088,8 @@ pragma solidity ^0.8.0;
 
 interface ITokenICO {
     function getPurchaseAmount(address buyer) external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address recipient, uint256 amount) external returns (bool);
 }
 
 contract StakingDapp is Ownable, ReentrancyGuard {
@@ -1152,7 +1154,7 @@ contract StakingDapp is Ownable, ReentrancyGuard {
         tokenICO = ITokenICO(_tokenICO);
     }
 
-    function distributeReferralReward(address buyer, uint256 stakingAmount, uint256 icoAmount) private {
+    function distributeReferralReward(address buyer, uint256 stakingAmount) private {
         address referrer = referrals[buyer];
         require(stakingAmount > 0, "Staking required to activate referral");
         if (referrer != address(0)) {
