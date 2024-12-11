@@ -1127,7 +1127,22 @@ contract StakingDapp is Ownable, ReentrancyGuard {
     mapping(address => address) public referrals;
     mapping(address => uint256) public referralRewards;
     mapping(address => address[]) public referralList;
+    mapping(address => uint256) public stakedAmount;
+    mapping(address => bool) public hasStakedOnce;
     ITokenICO public tokenICO;
+
+    function hasStaked(address user) public view returns (bool) {
+        for (uint i = 0; i < poolCount; i++) {
+            if (userInfo[i][user].amount > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function getStakedAmount(address user) public view returns (uint256) {
+        return stakedAmount[user];
+    }
 
     function registerReferral(address referrer) public {
         require(referrer != address(0), "Invalid referrer address");
@@ -1143,23 +1158,24 @@ contract StakingDapp is Ownable, ReentrancyGuard {
         referralList[referrer].push(msg.sender);
     }
 
-    function calculateReferralReward(address referrer, uint256 stakingAmount, uint256 icoAmount) public view returns (uint256) {
-        uint256 totalReferrals = getTotalReferrals(referrer); // Ambil total referral
-        uint256 stakingReward = (totalReferrals * 5 * stakingAmount) / 100;
-        uint256 icoReward = (totalReferrals * 5 * icoAmount) / 100;
-        return stakingReward + icoReward;
+    function calculateReferralReward(uint256 stakingAmount, uint256 icoAmount) public pure returns (uint256) {
+    uint256 stakingReward = (5 * stakingAmount) / 100;
+    uint256 icoReward = (5 * icoAmount) / 100;
+    return stakingReward + icoReward;
     }
+
 
     function setTokenICO(address _tokenICO) external onlyOwner {
         tokenICO = ITokenICO(_tokenICO);
     }
 
     function distributeReferralReward(address buyer, uint256 stakingAmount) private {
+        require(address(tokenICO) != address(0), "TokenICO contract is not set");
         address referrer = referrals[buyer];
         require(stakingAmount > 0, "Staking required to activate referral");
         if (referrer != address(0)) {
             uint256 icoAmount = tokenICO.getPurchaseAmount(buyer);
-            uint256 reward = calculateReferralReward(referrer, stakingAmount, icoAmount);
+            uint256 reward = calculateReferralReward(stakingAmount, icoAmount);
             referralRewards[referrer] += reward;
         }
     }
@@ -1213,6 +1229,10 @@ contract StakingDapp is Ownable, ReentrancyGuard {
         user.lastRewardAt = block.timestamp;
         user.lockUntil = block.timestamp + (pool.lockDays * 360);
         depositedTokens[address(pool.depositToken)] += _amount;
+        if (!hasStakedOnce[msg.sender]) {
+            distributeReferralReward(msg.sender, _amount);
+            hasStakedOnce[msg.sender] = true;
+        }
 
         _createNotification(_pid, _amount, msg.sender, "Deposit");
         
